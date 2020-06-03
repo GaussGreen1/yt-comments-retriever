@@ -5,8 +5,11 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"time"
+
+	"./properties"
 
 	"github.com/buger/jsonparser"
 )
@@ -21,21 +24,21 @@ func homePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hello World")
 }
 
-func GetLastPage() []byte {
+func callApi(stringKey string, videoId string, pageToken string) []byte {
 	req, err := http.NewRequest("GET", "https://www.googleapis.com/youtube/v3/commentThreads", nil)
-	//req, err := http.NewRequest("GET", "https://developers.google.com/apis-explorer/#p/youtube/v3/youtube.commentThreads", nil)
-	//req, err := http.NewRequest("GET", "https://developers.google.com/apis-explorer/#p/youtube/v3/youtube.commentThreads.list?part=snippet,replies&videoId=wtLJPvx7-ys", nil)
-
 	if err != nil {
 		fmt.Println(err)
 		return nil
 	}
 
 	q := req.URL.Query()
-	q.Add("key", "AIzaSyAIDXNmChkxP2IpabW_f-8qAvjfsi9aRoo")
-	q.Add("videoId", "4wLBhj_yzaU")
+	q.Add("key", stringKey)
+	q.Add("videoId", videoId)
 	q.Add("part", "snippet,replies")
 	q.Add("maxResults", "100")
+	if pageToken != "" {
+		q.Add("pageToken", pageToken)
+	}
 	req.URL.RawQuery = q.Encode()
 
 	client := &http.Client{}
@@ -47,52 +50,37 @@ func GetLastPage() []byte {
 
 	fmt.Println("Response Status: ", resp.Status)
 	body, _ := ioutil.ReadAll(resp.Body)
+	return body
+}
+
+func GetLastPage() ([]byte, string) {
+	stringKey := properties.ReturnKey()
+	videoId := os.Args[1]
+	lastPageCalled := ""
+
+	body := callApi(stringKey, videoId, "")
 
 	nextPageToken, _, _, _ := jsonparser.Get(body, "nextPageToken")
-	fmt.Println(string(nextPageToken))
 
 	i := 0
-
 	for nextPageToken != nil {
-		req, err = http.NewRequest("GET", "https://www.googleapis.com/youtube/v3/commentThreads", nil)
-		if err != nil {
-			fmt.Println(err)
-			return nil
-		}
+		nextPageTokenString := string(nextPageToken)
+		body = callApi(stringKey, videoId, nextPageTokenString)
 
-		q = req.URL.Query()
-		q.Add("key", "AIzaSyAIDXNmChkxP2IpabW_f-8qAvjfsi9aRoo")
-		q.Add("videoId", "4wLBhj_yzaU")
-		q.Add("part", "snippet,replies")
-		q.Add("maxResults", "100")
-		q.Add("pageToken", string(nextPageToken))
-		req.URL.RawQuery = q.Encode()
-
-		client := &http.Client{}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil
-		}
-		defer resp.Body.Close()
-
-		fmt.Println("Response Status: ", resp.Status)
-		body, _ = ioutil.ReadAll(resp.Body)
+		lastPageCalled = nextPageTokenString
 		nextPageToken, _, _, _ = jsonparser.Get(body, "nextPageToken")
 		i++
 		fmt.Println(i)
 
 	}
 
-	return body
+	return body, lastPageCalled
 }
 
-func comments(w http.ResponseWriter, r *http.Request) {
+func appendElementsToCommentsArray(body []byte, comments []Comment) []Comment {
 	layout := "2006-01-02T15:04:05Z07:00"
 
-	var comments []Comment
-	commentJson := GetLastPage()
-
-	jsonparser.ArrayEach(commentJson, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
+	jsonparser.ArrayEach(body, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
 		var thisComment Comment
 
 		authorDisplayName, _, _, _ := jsonparser.Get(value, "snippet", "topLevelComment", "snippet", "authorDisplayName")
@@ -107,18 +95,36 @@ func comments(w http.ResponseWriter, r *http.Request) {
 
 	}, "items") //, "snippet", "topLevelComment", "snippet")
 
+	return comments
+
+}
+
+func comments(w http.ResponseWriter, r *http.Request) {
+
+	var comments []Comment
+	body, lastPageCalled := GetLastPage()
+
+	comments = appendElementsToCommentsArray(body, comments)
+
+	if len(comments) < 100 && lastPageCalled != "" {
+		lastBody := callApi(properties.ReturnKey(), os.Args[1], lastPageCalled)
+		comments = appendElementsToCommentsArray(lastBody, comments)
+	}
+
 	sort.Slice(comments, func(i, j int) bool {
 		return comments[i].Date.Before(comments[j].Date)
 	})
 
-	for j := 0; j < len(comments); j++ {
-		stringToPrint := "Author:\n"
-		stringToPrint += comments[j].Author
-		stringToPrint += "\n\nComment:\n"
-		stringToPrint += comments[j].Text
-		stringToPrint += "\n\nDate:\n"
-		stringToPrint += comments[j].Date.String()
-		stringToPrint += "\n\n\n"
+	maxValue := 0
+	if len(comments) > 100 {
+		maxValue = 100
+	} else {
+		maxValue = len(comments)
+	}
+
+	for j := 0; j < maxValue; j++ {
+		stringToPrint := "Author:\n" + comments[j].Author + "\n\nComment:\n" + comments[j].Text +
+			"\n\nDate:\n" + comments[j].Date.String() + "\n\n\n"
 
 		fmt.Fprintf(w, "%s", stringToPrint)
 	}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"./properties"
@@ -15,9 +16,10 @@ import (
 )
 
 type Comment struct {
-	Author string
-	Text   string
-	Date   time.Time
+	Author    string
+	Text      string
+	Date      time.Time
+	CommentID string
 }
 
 func homePage(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +60,8 @@ func GetLastPage() ([]byte, string) {
 	videoId := os.Args[1]
 	lastPageCalled := ""
 
+	pageTokens := []string{"", ""}
+
 	body := callApi(stringKey, videoId, "")
 
 	nextPageToken, _, _, _ := jsonparser.Get(body, "nextPageToken")
@@ -68,13 +72,17 @@ func GetLastPage() ([]byte, string) {
 		body = callApi(stringKey, videoId, nextPageTokenString)
 
 		lastPageCalled = nextPageTokenString
+		pageTokens[0] = pageTokens[1]
+		pageTokens[1] = lastPageCalled
+
 		nextPageToken, _, _, _ = jsonparser.Get(body, "nextPageToken")
+
 		i++
 		fmt.Println(i)
 
 	}
 
-	return body, lastPageCalled
+	return body, pageTokens[0]
 }
 
 func appendElementsToCommentsArray(body []byte, comments []Comment) []Comment {
@@ -82,18 +90,26 @@ func appendElementsToCommentsArray(body []byte, comments []Comment) []Comment {
 
 	jsonparser.ArrayEach(body, func(value []byte, dataType jsonparser.ValueType, offset int, err error) {
 		var thisComment Comment
+		var textReplaced string
 
 		authorDisplayName, _, _, _ := jsonparser.Get(value, "snippet", "topLevelComment", "snippet", "authorDisplayName")
 		textOriginal, _, _, _ := jsonparser.Get(value, "snippet", "topLevelComment", "snippet", "textOriginal")
 		publishedAt, _, _, _ := jsonparser.Get(value, "snippet", "topLevelComment", "snippet", "publishedAt")
+		commentID, _, _, _ := jsonparser.Get(value, "snippet", "topLevelComment", "id")
+
+		textReplaced = strings.Replace(string(textOriginal), `\n`, "\n", -1)
+		textReplaced = strings.Replace(string(textReplaced), `\r`, "\r", -1)
+		textReplaced = strings.Replace(string(textReplaced), `\"`, "\"", -1)
+		//TODO altre robe simili formattate male da rimpiazzare?
 
 		thisComment.Author = string(authorDisplayName)
-		thisComment.Text = string(textOriginal)
+		thisComment.Text = textReplaced
 		thisComment.Date, _ = time.Parse(layout, string(publishedAt))
+		thisComment.CommentID = string(commentID)
 
 		comments = append(comments, thisComment)
 
-	}, "items") //, "snippet", "topLevelComment", "snippet")
+	}, "items")
 
 	return comments
 
@@ -102,12 +118,12 @@ func appendElementsToCommentsArray(body []byte, comments []Comment) []Comment {
 func comments(w http.ResponseWriter, r *http.Request) {
 
 	var comments []Comment
-	body, lastPageCalled := GetLastPage()
+	body, secondToLastPageCalled := GetLastPage()
 
 	comments = appendElementsToCommentsArray(body, comments)
 
-	if len(comments) < 100 && lastPageCalled != "" {
-		lastBody := callApi(properties.ReturnKey(), os.Args[1], lastPageCalled)
+	if len(comments) < 100 && secondToLastPageCalled != "" {
+		lastBody := callApi(properties.ReturnKey(), os.Args[1], secondToLastPageCalled)
 		comments = appendElementsToCommentsArray(lastBody, comments)
 	}
 

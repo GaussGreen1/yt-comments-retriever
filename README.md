@@ -32,3 +32,6 @@ We use:
 ```
 go run main.go gCWjioIR5MM
 ```
+
+You will then be able to read the first 100 comments of the video by accessing the following page from your browser:
+http://localhost:8080/comments

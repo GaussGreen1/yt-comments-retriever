@@ -23,7 +23,7 @@ go run main.go YOUR_YOUTUBE_VIDEO_ID_HERE
 
 
 
-For example, to retrieve at the first 100 comments in this video:
+For example, to retrieve the first 100 comments in this video:
 
 https://www.youtube.com/watch?v=gCWjioIR5MM
 

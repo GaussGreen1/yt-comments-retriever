@@ -6,7 +6,7 @@ In its current implementation, it retrieves the first 100 comments on the video.
 ## Purpose
 ![screenshot](https://i.imgur.com/YgUCN82.png)
 
-As of today, YouTube doesn't allow you to order comments by oldest first. The YouTube API also doesn't have an easy or fast way to get to them: the "commentThreads" function only returns the latest 100 comments and a token that you can use to make another API call to the next page.
+As of today, YouTube doesn't allow you to order comments by oldest first. The YouTube API also doesn't have an easy or fast way to get to them: the `commentThreads` function only returns the latest 100 comments and a token that you can use to make another API call to the next page.
 
 That's where this software comes in handy: it loop calls that API until it gets to the final page, which has the oldest comments, and formats its JSON to display them in a more readable way.
 
